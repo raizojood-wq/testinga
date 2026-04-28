@@ -1,0 +1,1323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>CYPHER_OS v2.0 // SECURE TERMINAL</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&family=VT323&display=swap" rel="stylesheet"/>
+
+<!-- ═══════════════════════════════════════════════════════
+     CYPHER_OS v2.0  ·  HTML5 · CSS3 · Vanilla JS
+     APIs Used:
+       - Canvas 2D API       → Matrix rain, globe, hex map
+       - Web Audio API       → Beeps, chimes, error buzz
+       - Web Speech API      → Voice greeting on login
+       - requestAnimationFrame→ Smooth render loops
+       - CSS Custom Props    → Full theme system
+       - CSS Animations      → Glitch, scanlines, pulse
+     ═══════════════════════════════════════════════════════ -->
+
+<style>
+/* ──────────────────────────────────────────
+   1. CSS CUSTOM PROPERTIES  (Design System)
+────────────────────────────────────────── */
+:root {
+  --g:     #00ff41;
+  --g2:    #00b32c;
+  --g3:    rgba(0,255,65,0.12);
+  --g4:    rgba(0,255,65,0.04);
+  --cyan:  #00e5ff;
+  --red:   #ff2d55;
+  --amber: #ffd60a;
+  --bg:    #010901;
+  --panel: rgba(1,14,1,0.9);
+  --bdr:   rgba(0,255,65,0.22);
+  --mono:  'Share Tech Mono', monospace;
+  --vt:    'VT323', monospace;
+  --disp:  'Orbitron', monospace;
+  --scan-opacity: 0.22;
+  --glow-sm: 0 0 8px var(--g);
+  --glow-md: 0 0 20px var(--g), 0 0 40px rgba(0,255,65,0.3);
+}
+
+/* ──────────────────────────────────────────
+   2. RESET + BASE
+────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg); color: var(--g); font-family: var(--mono); }
+
+/* ──────────────────────────────────────────
+   3. CRT EFFECTS  (Scanlines + Vignette)
+────────────────────────────────────────── */
+body::before { /* scanlines */
+  content: '';
+  position: fixed; inset: 0; pointer-events: none; z-index: 200;
+  background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,var(--scan-opacity)) 2px, rgba(0,0,0,var(--scan-opacity)) 4px);
+  animation: crt-flicker 9s infinite;
+}
+body::after { /* vignette */
+  content: '';
+  position: fixed; inset: 0; pointer-events: none; z-index: 201;
+  background: radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.9) 100%);
+}
+@keyframes crt-flicker {
+  0%,19%,21%,23%,25%,54%,56%,100% { opacity:1 }
+  20%,22%,24%,55% { opacity:.94 }
+}
+
+/* ──────────────────────────────────────────
+   4. CUSTOM CURSOR
+────────────────────────────────────────── */
+body { cursor: none; }
+#cursor {
+  position: fixed; width: 20px; height: 20px;
+  border: 1.5px solid var(--g); border-radius: 50%;
+  pointer-events: none; z-index: 9999;
+  transition: transform .06s; mix-blend-mode: screen;
+}
+#cursor::after {
+  content: ''; position: absolute; top:50%; left:50%;
+  transform: translate(-50%,-50%);
+  width: 4px; height: 4px; background: var(--g); border-radius: 50%;
+}
+#cursor.clicking { transform: scale(0.7); background: var(--g3); }
+
+/* ──────────────────────────────────────────
+   5. MATRIX CANVAS  (background)
+────────────────────────────────────────── */
+#matrix-canvas {
+  position: fixed; inset: 0; opacity: .15; z-index: 0;
+}
+
+/* ──────────────────────────────────────────
+   6. LOGIN SCREEN
+────────────────────────────────────────── */
+#login-screen {
+  position: fixed; inset: 0; z-index: 150;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 0;
+  transition: opacity .6s ease, transform .6s ease;
+}
+#login-screen.hiding {
+  opacity: 0; transform: scale(1.04);
+  pointer-events: none;
+}
+
+/* Animated corner brackets around login box */
+#login-box {
+  position: relative;
+  width: 420px;
+  padding: 40px 36px;
+  background: rgba(1,12,1,0.95);
+  border: 1px solid var(--bdr);
+  animation: login-appear .4s ease;
+}
+@keyframes login-appear {
+  from { opacity:0; transform:translateY(20px); }
+  to   { opacity:1; transform:none; }
+}
+
+/* Corner decorations using pseudo + spans */
+#login-box::before, #login-box::after {
+  content: ''; position: absolute;
+  width: 18px; height: 18px;
+  border-color: var(--g); border-style: solid;
+}
+#login-box::before { top: -2px; left: -2px; border-width: 2px 0 0 2px; }
+#login-box::after  { bottom: -2px; right: -2px; border-width: 0 2px 2px 0; }
+.login-corner-tr, .login-corner-bl {
+  position: absolute; width: 18px; height: 18px;
+  border-color: var(--g); border-style: solid;
+}
+.login-corner-tr { top: -2px; right: -2px; border-width: 2px 2px 0 0; }
+.login-corner-bl { bottom: -2px; left: -2px; border-width: 0 0 2px 2px; }
+
+/* Scanning line inside login box */
+#login-box .scan-beam {
+  position: absolute; left: 0; right: 0; height: 2px;
+  background: linear-gradient(90deg, transparent, var(--g), transparent);
+  opacity: .5; top: 0;
+  animation: scan-beam 3s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes scan-beam {
+  0%   { top: 0; opacity: .5 }
+  50%  { opacity: .8 }
+  100% { top: 100%; opacity: .5 }
+}
+
+#login-logo {
+  font-family: var(--disp); font-size: 22px; font-weight: 900;
+  letter-spacing: 6px; color: var(--g);
+  text-shadow: var(--glow-md);
+  margin-bottom: 4px;
+  animation: pulse-glow 3s ease-in-out infinite;
+}
+@keyframes pulse-glow {
+  0%,100% { text-shadow: var(--glow-md) }
+  50%     { text-shadow: 0 0 30px var(--g), 0 0 60px rgba(0,255,65,.5), 0 0 80px rgba(0,255,65,.2) }
+}
+
+#login-sub {
+  font-size: 10px; letter-spacing: 4px; color: var(--g2);
+  margin-bottom: 32px;
+}
+
+/* Typing banner */
+#login-typing {
+  font-family: var(--vt); font-size: 16px;
+  color: var(--g); letter-spacing: 2px;
+  margin-bottom: 28px; min-height: 22px;
+}
+
+.field-group { margin-bottom: 18px; }
+.field-label {
+  display: block; font-size: 10px; letter-spacing: 3px;
+  color: var(--g2); margin-bottom: 6px;
+}
+.field-input {
+  width: 100%; padding: 9px 12px;
+  background: rgba(0,255,65,0.04);
+  border: 1px solid var(--bdr);
+  color: var(--g); font-family: var(--mono); font-size: 14px;
+  outline: none; transition: border-color .2s, box-shadow .2s;
+  caret-color: var(--g);
+}
+.field-input:focus {
+  border-color: var(--g);
+  box-shadow: 0 0 12px rgba(0,255,65,0.25), inset 0 0 8px rgba(0,255,65,0.05);
+}
+.field-input::placeholder { color: rgba(0,255,65,0.25); }
+
+/* Password dots styling */
+#pass-input { letter-spacing: 4px; }
+
+#auth-btn {
+  width: 100%; padding: 11px;
+  background: transparent; border: 1px solid var(--g);
+  color: var(--g); font-family: var(--disp); font-size: 12px;
+  font-weight: 700; letter-spacing: 4px;
+  cursor: none; margin-top: 8px;
+  transition: background .2s, box-shadow .2s, transform .1s;
+  position: relative; overflow: hidden;
+}
+#auth-btn::before {
+  content: '';
+  position: absolute; inset: 0;
+  background: linear-gradient(90deg, transparent 0%, rgba(0,255,65,0.08) 50%, transparent 100%);
+  transform: translateX(-100%);
+  transition: transform .4s ease;
+}
+#auth-btn:hover { background: rgba(0,255,65,0.08); box-shadow: var(--glow-md); }
+#auth-btn:hover::before { transform: translateX(100%); }
+#auth-btn:active { transform: scale(0.98); }
+
+#login-error {
+  margin-top: 12px; font-size: 12px; color: var(--red);
+  letter-spacing: 2px; min-height: 20px; text-align: center;
+  animation: none;
+}
+#login-error.shake {
+  animation: shake .35s ease;
+}
+@keyframes shake {
+  0%,100%{transform:translateX(0)}
+  20%    {transform:translateX(-8px)}
+  40%    {transform:translateX(8px)}
+  60%    {transform:translateX(-5px)}
+  80%    {transform:translateX(5px)}
+}
+
+#login-hint {
+  margin-top: 20px; font-size: 9px;
+  color: rgba(0,255,65,0.2); letter-spacing: 2px; text-align: center;
+}
+
+/* Progress bar on login */
+#login-progress-wrap {
+  margin-top: 16px; height: 2px;
+  background: rgba(0,255,65,0.1);
+  border: 1px solid rgba(0,255,65,0.15);
+  display: none;
+}
+#login-progress-bar {
+  height: 100%; width: 0;
+  background: var(--g); box-shadow: var(--glow-sm);
+  transition: width 1.6s linear;
+}
+#login-status-text {
+  font-size: 10px; color: var(--g2); letter-spacing: 2px;
+  min-height: 16px; margin-top: 8px; text-align: center;
+}
+
+/* ──────────────────────────────────────────
+   7. MAIN DASHBOARD
+────────────────────────────────────────── */
+#app {
+  position: relative; z-index: 10;
+  display: grid;
+  grid-template-columns: 250px 1fr 230px;
+  grid-template-rows: 56px 1fr 170px;
+  gap: 6px; padding: 6px;
+  height: 100vh;
+  opacity: 0; transition: opacity .6s ease;
+}
+#app.visible { opacity: 1; }
+
+/* ──────────────────────────────────────────
+   8. PANEL BASE  (shared card style)
+────────────────────────────────────────── */
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--bdr);
+  padding: 10px 13px;
+  position: relative; overflow: hidden;
+}
+/* Top-left corner bracket */
+.panel::after {
+  content: '';
+  position: absolute; top:0; left:0;
+  width: 10px; height: 10px;
+  border-top: 2px solid var(--g); border-left: 2px solid var(--g);
+}
+/* Bottom-right corner bracket */
+.panel .br-corner {
+  position: absolute; bottom:0; right:0;
+  width: 10px; height: 10px;
+  border-bottom: 2px solid var(--g2); border-right: 2px solid var(--g2);
+}
+/* Subtle inner glow */
+.panel::before {
+  content: '';
+  position: absolute; inset: 0;
+  background: linear-gradient(135deg, rgba(0,255,65,0.03) 0%, transparent 55%);
+  pointer-events: none;
+}
+
+.panel-label {
+  font-family: var(--disp); font-size: 8px;
+  letter-spacing: 3px; color: var(--g2);
+  text-transform: uppercase; margin-bottom: 9px;
+  display: flex; align-items: center; gap: 7px;
+}
+.panel-label::before { content: '//'; color: var(--g); opacity: .45; }
+
+/* ──────────────────────────────────────────
+   9. HEADER
+────────────────────────────────────────── */
+#header {
+  grid-column: 1 / -1;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--bdr);
+  background: rgba(0,255,65,0.03);
+}
+
+#logo-wrap { position: relative; }
+#logo {
+  font-family: var(--disp); font-size: 17px; font-weight: 900;
+  letter-spacing: 6px; color: var(--g); text-shadow: var(--glow-md);
+  animation: pulse-glow 3s ease-in-out infinite;
+}
+#logo-glitch {
+  position: absolute; inset: 0;
+  font-family: var(--disp); font-size: 17px; font-weight: 900;
+  letter-spacing: 6px; color: var(--cyan); opacity: 0;
+}
+#logo-glitch.active { opacity: .7; animation: glitch-anim .15s steps(1) 3; }
+
+@keyframes glitch-anim {
+  0%   { clip-path:inset(40% 0 61% 0); transform:translate(-4px,0); }
+  25%  { clip-path:inset(92% 0 1% 0);  transform:translate(4px,0);  }
+  50%  { clip-path:inset(43% 0 1% 0);  transform:translate(-3px,0); }
+  75%  { clip-path:inset(25% 0 58% 0); transform:translate(3px,0);  }
+  100% { clip-path:inset(58% 0 43% 0); transform:translate(-2px,0); }
+}
+
+#header-meta { display: flex; gap: 20px; font-size: 10px; color: var(--g2); }
+#header-meta span { display: flex; align-items: center; gap: 6px; }
+.dot { width: 6px; height: 6px; border-radius: 50%; background: var(--g); box-shadow: var(--glow-sm); animation: blink 1.3s step-end infinite; }
+.dot.amber { background: var(--amber); box-shadow: 0 0 6px var(--amber); animation-delay: .5s; }
+.dot.red   { background: var(--red);   box-shadow: 0 0 6px var(--red);   animation-delay: .2s; }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:.1} }
+
+#clock { font-family: var(--disp); font-size: 13px; color: var(--g); letter-spacing: 2px; }
+#welcome-tag { font-size: 10px; color: var(--cyan); letter-spacing: 2px; }
+
+/* ──────────────────────────────────────────
+   10. LEFT — SYS STATS
+────────────────────────────────────────── */
+#left-panel { grid-row: 2; display: flex; flex-direction: column; }
+
+.stat-row { margin-bottom: 12px; }
+.stat-label { font-size: 9px; color: var(--g2); letter-spacing: 2px; margin-bottom: 4px; display: flex; justify-content: space-between; }
+.stat-bar { height: 3px; background: rgba(0,255,65,.08); border: 1px solid rgba(0,255,65,.15); position: relative; overflow: hidden; }
+.stat-fill { height: 100%; transition: width 1s ease; position: relative; }
+.stat-fill::after { content:''; position:absolute; right:0; top:0; bottom:0; width:3px; background:#fff; opacity:.5; }
+.sf-green  { background: var(--g);   box-shadow: 0 0 6px var(--g); }
+.sf-cyan   { background: var(--cyan);box-shadow: 0 0 6px var(--cyan); }
+.sf-amber  { background: var(--amber);box-shadow: 0 0 6px var(--amber); }
+.sf-red    { background: var(--red); box-shadow: 0 0 6px var(--red); }
+
+.node-section { margin-top: 12px; flex: 1; overflow: hidden; }
+.node-item {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 10px; padding: 4px 0;
+  border-bottom: 1px solid rgba(0,255,65,.07);
+  color: var(--g2); animation: fade-in-up .3s ease;
+}
+.ndot { width: 5px; height: 5px; border-radius: 50%; flex-shrink:0; }
+.ndot.online  { background: var(--g);   box-shadow: 0 0 4px var(--g); }
+.ndot.offline { background: var(--red); }
+.ndot.pending { background: var(--amber); animation: blink 1s step-end infinite; }
+
+/* ──────────────────────────────────────────
+   11. CENTER — TERMINAL
+────────────────────────────────────────── */
+#center-panel { grid-row: 2; display: flex; flex-direction: column; }
+
+#term-header {
+  display: flex; align-items: center; gap: 7px;
+  padding-bottom: 9px; border-bottom: 1px solid var(--bdr);
+  margin-bottom: 9px; flex-shrink: 0;
+}
+.tbtn { width: 10px; height: 10px; border-radius: 50%; cursor: none; }
+.tbtn.red   { background: #ff5f57; }
+.tbtn.amber { background: #febc2e; }
+.tbtn.green { background: #28c840; }
+#term-title { flex:1; text-align:center; font-size:10px; letter-spacing:2px; color:var(--g2); font-family:var(--disp); }
+
+#term-output {
+  flex: 1; overflow-y: auto; font-size: 12px; line-height: 1.75;
+  padding-right: 4px;
+  scrollbar-width: thin; scrollbar-color: var(--g2) transparent;
+}
+#term-output::-webkit-scrollbar { width: 3px; }
+#term-output::-webkit-scrollbar-thumb { background: var(--g2); }
+
+.tl { display: flex; gap: 7px; animation: fade-in-up .2s ease; }
+.tp { color: var(--g); flex-shrink:0; }
+.tc { color: #a8ff78; }
+.to { color: var(--g2); padding-left: 14px; }
+.te { color: var(--red); padding-left: 14px; }
+.tw { color: var(--amber); padding-left: 14px; }
+.ts-ok { color: var(--cyan); padding-left: 14px; }
+
+#term-in-row {
+  display: flex; align-items: center; gap: 8px;
+  border-top: 1px solid var(--bdr); padding-top: 9px;
+  margin-top: 7px; flex-shrink: 0;
+}
+.prompt-sym { color: var(--g); font-size: 13px; flex-shrink:0; }
+#term-in {
+  flex:1; background:transparent; border:none; outline:none;
+  color:var(--g); font-family:var(--mono); font-size:13px;
+  caret-color:var(--g);
+}
+
+/* ──────────────────────────────────────────
+   12. RIGHT — GLOBE + THREATS
+────────────────────────────────────────── */
+#right-panel { grid-row: 2; display: flex; flex-direction: column; gap: 6px; }
+
+.threat-item {
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 9px; padding: 4px 0;
+  border-bottom: 1px solid rgba(0,255,65,.06);
+  animation: slide-in .3s ease;
+}
+.threat-src { color: var(--g2); }
+.badge { padding: 2px 6px; border-radius: 1px; font-size: 8px; font-family: var(--disp); letter-spacing: 1px; }
+.badge.crit { background: rgba(255,45,85,.15); color:var(--red);   border: 1px solid rgba(255,45,85,.35); }
+.badge.warn { background: rgba(255,214,10,.1); color:var(--amber); border: 1px solid rgba(255,214,10,.3); }
+.badge.info { background: rgba(0,229,255,.08); color:var(--cyan);  border: 1px solid rgba(0,229,255,.25); }
+
+/* ──────────────────────────────────────────
+   13. BOTTOM ROW
+────────────────────────────────────────── */
+#bottom-left   { grid-column:1; grid-row:3; }
+#bottom-center { grid-column:2; grid-row:3; }
+#bottom-right  { grid-column:3; grid-row:3; }
+
+/* Traffic bars */
+#bar-wrap {
+  display: flex; gap: 2px; align-items: flex-end;
+  height: calc(100% - 26px); margin-top: 4px;
+}
+.bar-col { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; gap:2px; height:100%; }
+.bar-fill {
+  width: 100%; min-height: 3px;
+  background: linear-gradient(to top, var(--g), rgba(0,255,65,.4));
+  box-shadow: 0 0 6px rgba(0,255,65,.3);
+  transition: height .55s cubic-bezier(.4,0,.2,1);
+}
+.bar-lbl { font-size: 8px; color: var(--g2); }
+
+/* Alert log */
+.alert-item {
+  display: flex; gap: 7px; font-size: 9px; padding: 4px 0;
+  border-bottom: 1px solid rgba(0,255,65,.06); line-height: 1.4;
+  animation: fade-in-up .3s ease;
+}
+.alert-ts { color: var(--g2); white-space: nowrap; flex-shrink:0; }
+.alert-msg { color: var(--g); }
+.alert-msg.red { color: var(--red); }
+.alert-msg.amber { color: var(--amber); }
+
+/* ──────────────────────────────────────────
+   14. KEYFRAME LIBRARY
+────────────────────────────────────────── */
+@keyframes fade-in-up {
+  from { opacity:0; transform:translateY(5px) }
+  to   { opacity:1; transform:none }
+}
+@keyframes slide-in {
+  from { opacity:0; transform:translateX(10px) }
+  to   { opacity:1; transform:none }
+}
+
+/* ──────────────────────────────────────────
+   15. VOICE INDICATOR  (bottom-right of screen)
+────────────────────────────────────────── */
+#voice-indicator {
+  position: fixed; bottom: 18px; right: 18px; z-index: 300;
+  display: none; align-items: center; gap: 8px;
+  background: rgba(1,14,1,0.95); border: 1px solid var(--bdr);
+  padding: 7px 14px; font-size: 10px; color: var(--cyan);
+  letter-spacing: 2px; font-family: var(--disp);
+}
+#voice-indicator.active { display: flex; animation: fade-in-up .3s ease; }
+.voice-bars { display:flex; gap:3px; align-items:flex-end; height:16px; }
+.vb { width: 3px; background: var(--cyan); border-radius: 1px; animation: voice-wave 0.5s ease-in-out infinite; }
+.vb:nth-child(2) { animation-delay: .1s; }
+.vb:nth-child(3) { animation-delay: .2s; }
+.vb:nth-child(4) { animation-delay: .15s; }
+.vb:nth-child(5) { animation-delay: .05s; }
+@keyframes voice-wave {
+  0%,100% { height: 4px }
+  50%     { height: 14px }
+}
+</style>
+</head>
+<body>
+
+<div id="cursor"></div>
+<canvas id="matrix-canvas"></canvas>
+
+<!-- ══════════════════════════════════════════
+     LOGIN SCREEN
+══════════════════════════════════════════ -->
+<section id="login-screen">
+  <div id="login-box">
+    <div class="login-corner-tr"></div>
+    <div class="login-corner-bl"></div>
+    <div class="scan-beam"></div>
+
+    <div style="text-align:center; margin-bottom:28px;">
+      <div id="login-logo">CYPHER_OS</div>
+      <div id="login-sub">SECURE TERMINAL v2.0</div>
+    </div>
+
+    <div id="login-typing">&nbsp;</div>
+
+    <div class="field-group">
+      <label class="field-label" for="user-input">// USER_IDENTITY</label>
+      <input class="field-input" id="user-input" type="text" autocomplete="off" spellcheck="false" placeholder="enter username"/>
+    </div>
+
+    <div class="field-group">
+      <label class="field-label" for="pass-input">// AUTH_KEY</label>
+      <input class="field-input" id="pass-input" type="password" autocomplete="off" placeholder="enter passphrase"/>
+    </div>
+
+    <button id="auth-btn">AUTHENTICATE</button>
+
+    <div id="login-progress-wrap">
+      <div id="login-progress-bar"></div>
+    </div>
+    <div id="login-status-text"></div>
+    <div id="login-error"></div>
+
+    <div id="login-hint">hint: raizo / ninjago12345  &nbsp;|&nbsp;  admin / 1337</div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════
+     VOICE INDICATOR
+══════════════════════════════════════════ -->
+<div id="voice-indicator">
+  <div class="voice-bars">
+    <div class="vb"></div><div class="vb"></div><div class="vb"></div>
+    <div class="vb"></div><div class="vb"></div>
+  </div>
+  <span id="voice-text">VOICE ACTIVE</span>
+</div>
+
+<!-- ══════════════════════════════════════════
+     MAIN DASHBOARD
+══════════════════════════════════════════ -->
+<div id="app">
+
+  <!-- HEADER -->
+  <header id="header" class="panel">
+    <div id="logo-wrap">
+      <div id="logo">CYPHER_OS</div>
+      <div id="logo-glitch">CYPHER_OS</div>
+    </div>
+    <div id="header-meta">
+      <span><span class="dot"></span>NODE_ACTIVE</span>
+      <span><span class="dot amber"></span>FIREWALL_ON</span>
+      <span><span class="dot red"></span>INTRUSION_ALERT</span>
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px;">
+      <div id="clock">--:--:--</div>
+      <div id="welcome-tag"></div>
+    </div>
+    <div class="br-corner"></div>
+  </header>
+
+  <!-- LEFT: System Stats -->
+  <div id="left-panel" class="panel">
+    <div class="panel-label">SYS_MONITOR</div>
+    <div class="stat-row">
+      <div class="stat-label"><span>CPU_CORE</span><span id="cpu-val">—</span></div>
+      <div class="stat-bar"><div class="stat-fill sf-green" id="cpu-bar" style="width:0"></div></div>
+    </div>
+    <div class="stat-row">
+      <div class="stat-label"><span>MEM_HEAP</span><span id="mem-val">—</span></div>
+      <div class="stat-bar"><div class="stat-fill sf-cyan" id="mem-bar" style="width:0"></div></div>
+    </div>
+    <div class="stat-row">
+      <div class="stat-label"><span>NET_I/O</span><span id="net-val">—</span></div>
+      <div class="stat-bar"><div class="stat-fill sf-amber" id="net-bar" style="width:0"></div></div>
+    </div>
+    <div class="stat-row">
+      <div class="stat-label"><span>DISK_RW</span><span id="disk-val">—</span></div>
+      <div class="stat-bar"><div class="stat-fill sf-red" id="disk-bar" style="width:0"></div></div>
+    </div>
+    <div class="stat-row">
+      <div class="stat-label"><span>TEMP_C</span><span id="temp-val">—</span></div>
+      <div class="stat-bar"><div class="stat-fill" id="temp-bar" style="width:0;background:#ff6b35;box-shadow:0 0 6px #ff6b35"></div></div>
+    </div>
+
+    <div class="node-section">
+      <div class="panel-label" style="margin-bottom:7px">ACTIVE_NODES</div>
+      <div id="node-list"></div>
+    </div>
+    <div class="br-corner"></div>
+  </div>
+
+  <!-- CENTER: Terminal -->
+  <div id="center-panel" class="panel">
+    <div id="term-header">
+      <div class="tbtn red"></div>
+      <div class="tbtn amber"></div>
+      <div class="tbtn green"></div>
+      <div id="term-title">root@cypher ~ bash — encrypted</div>
+    </div>
+    <div id="term-output"></div>
+    <div id="term-in-row">
+      <span class="prompt-sym" id="prompt-sym">guest@cypher:~$</span>
+      <input id="term-in" type="text" spellcheck="false" autocomplete="off" placeholder="type a command…"/>
+    </div>
+    <div class="br-corner"></div>
+  </div>
+
+  <!-- RIGHT: Globe + Threats -->
+  <div id="right-panel">
+    <div class="panel" style="flex:1;min-height:0">
+      <div class="panel-label">NET_TOPOLOGY</div>
+      <div style="display:flex;align-items:center;justify-content:center;height:calc(100% - 26px)">
+        <canvas id="globe-canvas" width="200" height="150"></canvas>
+      </div>
+      <div class="br-corner"></div>
+    </div>
+    <div class="panel" style="flex-shrink:0">
+      <div class="panel-label">THREAT_FEED</div>
+      <div id="threat-list"></div>
+      <div class="br-corner"></div>
+    </div>
+  </div>
+
+  <!-- BOTTOM LEFT: Hex Map -->
+  <div id="bottom-left" class="panel">
+    <div class="panel-label">PACKET_MAP</div>
+    <canvas id="hex-canvas" style="width:100%;height:calc(100% - 24px)"></canvas>
+    <div class="br-corner"></div>
+  </div>
+
+  <!-- BOTTOM CENTER: Traffic Chart -->
+  <div id="bottom-center" class="panel">
+    <div class="panel-label">NET_TRAFFIC</div>
+    <div id="bar-wrap"></div>
+    <div class="br-corner"></div>
+  </div>
+
+  <!-- BOTTOM RIGHT: Alert Log -->
+  <div id="bottom-right" class="panel">
+    <div class="panel-label">ALERT_LOG</div>
+    <div id="alert-list"></div>
+    <div class="br-corner"></div>
+  </div>
+
+</div><!-- /#app -->
+
+<!-- ══════════════════════════════════════════
+     JAVASCRIPT
+══════════════════════════════════════════ -->
+<script>
+/* ═══════════════════════════════════════════
+   SECTION A — WEB AUDIO API
+   Creates all sound effects procedurally.
+   No files needed, pure synthesis.
+═══════════════════════════════════════════ */
+const AudioCtx = window.AudioContext || window.webkitAudioContext;
+let audioCtx = null;
+
+function getAudio() {
+  if (!audioCtx) audioCtx = new AudioCtx();
+  return audioCtx;
+}
+
+// Generic oscillator beep
+function beep(freq = 880, dur = 0.06, type = 'square', vol = 0.06) {
+  const ctx = getAudio();
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = type;
+  osc.frequency.setValueAtTime(freq, ctx.currentTime);
+  gain.gain.setValueAtTime(vol, ctx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.start();
+  osc.stop(ctx.currentTime + dur);
+}
+
+// Keypress tick sound
+function soundKeyTick() { beep(1200, 0.04, 'square', 0.04); }
+
+// Login error buzz
+function soundError() {
+  const ctx = getAudio();
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(120, ctx.currentTime);
+  osc.frequency.linearRampToValueAtTime(60, ctx.currentTime + 0.3);
+  gain.gain.setValueAtTime(0.12, ctx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
+  osc.connect(gain); gain.connect(ctx.destination);
+  osc.start(); osc.stop(ctx.currentTime + 0.35);
+}
+
+// Login success ascending chime sequence
+function soundSuccess() {
+  const notes = [523, 659, 784, 1047, 1319]; // C5 E5 G5 C6 E6
+  notes.forEach((f, i) => {
+    setTimeout(() => beep(f, 0.18, 'triangle', 0.1), i * 80);
+  });
+}
+
+// Notification ping
+function soundPing() { beep(1760, 0.12, 'sine', 0.07); }
+
+// Terminal command accept
+function soundCmd() {
+  beep(880, 0.05, 'square', 0.05);
+  setTimeout(() => beep(1100, 0.05, 'square', 0.04), 55);
+}
+
+
+/* ═══════════════════════════════════════════
+   SECTION B — WEB SPEECH API
+   Voice greeting on successful login.
+═══════════════════════════════════════════ */
+let loggedInUser = 'operator';
+
+function speakWelcome(username) {
+  if (!('speechSynthesis' in window)) return;
+  const vi = document.getElementById('voice-indicator');
+  const vt = document.getElementById('voice-text');
+  vi.classList.add('active');
+
+  // Cancel any queued speech
+  window.speechSynthesis.cancel();
+
+  const messages = [
+    `Welcome back, ${username}.`,
+    `Access granted. Identity confirmed.`,
+    `Initializing secure shell. All systems online.`,
+    `Good to have you, ${username}. Stay sharp.`
+  ];
+
+  let idx = 0;
+  function speakNext() {
+    if (idx >= messages.length) {
+      vi.classList.remove('active');
+      return;
+    }
+    const utt = new SpeechSynthesisUtterance(messages[idx]);
+    utt.rate  = 0.88;
+    utt.pitch = 0.82;
+    utt.volume = 0.9;
+
+    // Pick a deep/robotic voice if available
+    const voices = window.speechSynthesis.getVoices();
+    const preferred = voices.find(v =>
+      v.name.toLowerCase().includes('google uk english male') ||
+      v.name.toLowerCase().includes('daniel') ||
+      v.name.toLowerCase().includes('david') ||
+      v.name.toLowerCase().includes('alex')
+    );
+    if (preferred) utt.voice = preferred;
+
+    vt.textContent = messages[idx].toUpperCase();
+    utt.onend = () => { idx++; setTimeout(speakNext, 200); };
+    window.speechSynthesis.speak(utt);
+    idx++;
+  }
+
+  // Voices may not be loaded yet
+  if (window.speechSynthesis.getVoices().length === 0) {
+    window.speechSynthesis.onvoiceschanged = () => speakNext();
+  } else {
+    speakNext();
+  }
+}
+
+
+/* ═══════════════════════════════════════════
+   SECTION C — MATRIX RAIN  (Canvas 2D API)
+═══════════════════════════════════════════ */
+const mc  = document.getElementById('matrix-canvas');
+const mct = mc.getContext('2d');
+const CHARS = 'アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモ0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ@#$%^&';
+const FS = 13;
+let drops = [];
+
+function initMatrix() {
+  mc.width  = window.innerWidth;
+  mc.height = window.innerHeight;
+  const cols = Math.floor(mc.width / FS);
+  drops = Array.from({ length: cols }, () => Math.floor(Math.random() * -mc.height / FS));
+}
+initMatrix();
+window.addEventListener('resize', initMatrix);
+
+function drawMatrix() {
+  mct.fillStyle = 'rgba(1,9,1,0.055)';
+  mct.fillRect(0, 0, mc.width, mc.height);
+  mct.font = FS + 'px Share Tech Mono';
+  drops.forEach((d, i) => {
+    const ch = CHARS[Math.floor(Math.random() * CHARS.length)];
+    const bright = Math.random() > 0.96;
+    mct.fillStyle = bright ? '#ffffff' : (Math.random() > 0.93 ? '#00e5ff' : '#00ff41');
+    mct.fillText(ch, i * FS, d * FS);
+    if (d * FS > mc.height && Math.random() > 0.975) drops[i] = 0;
+    drops[i]++;
+  });
+}
+setInterval(drawMatrix, 48);
+
+
+/* ═══════════════════════════════════════════
+   SECTION D — CUSTOM CURSOR
+═══════════════════════════════════════════ */
+const cursor = document.getElementById('cursor');
+document.addEventListener('mousemove', e => {
+  cursor.style.left = (e.clientX - 10) + 'px';
+  cursor.style.top  = (e.clientY - 10) + 'px';
+});
+document.addEventListener('mousedown', () => cursor.classList.add('clicking'));
+document.addEventListener('mouseup',   () => cursor.classList.remove('clicking'));
+
+
+/* ═══════════════════════════════════════════
+   SECTION E — CLOCK
+═══════════════════════════════════════════ */
+function tick() {
+  const n = new Date();
+  const pad = x => String(x).padStart(2,'0');
+  document.getElementById('clock').textContent =
+    `${pad(n.getHours())}:${pad(n.getMinutes())}:${pad(n.getSeconds())}`;
+}
+setInterval(tick, 1000); tick();
+
+
+/* ═══════════════════════════════════════════
+   SECTION F — LOGIN SYSTEM
+   Credentials: raizo/ninjago12345  or  admin/1337
+═══════════════════════════════════════════ */
+const CREDENTIALS = {
+  raizo:  'ninjago12345',
+  admin: '1337',
+  ghost: 'shadow',
+};
+
+const loginScreen  = document.getElementById('login-screen');
+const userInput    = document.getElementById('user-input');
+const passInput    = document.getElementById('pass-input');
+const authBtn      = document.getElementById('auth-btn');
+const loginError   = document.getElementById('login-error');
+const progressWrap = document.getElementById('login-progress-wrap');
+const progressBar  = document.getElementById('login-progress-bar');
+const statusText   = document.getElementById('login-status-text');
+const app          = document.getElementById('app');
+
+// Typing effect for the login banner
+const loginTyping = document.getElementById('login-typing');
+const typingMsgs  = [
+  'ESTABLISHING SECURE CONNECTION...',
+  'VERIFYING ENCRYPTION KEYS...',
+  'CHECKING THREAT SIGNATURES...',
+  'AWAITING AUTHENTICATION...',
+];
+let typingIdx = 0;
+
+function runTypingEffect() {
+  const msg  = typingMsgs[typingIdx % typingMsgs.length];
+  let  ci    = 0;
+  loginTyping.textContent = '';
+  const iv = setInterval(() => {
+    loginTyping.textContent += msg[ci++];
+    if (ci >= msg.length) {
+      clearInterval(iv);
+      setTimeout(() => {
+        typingIdx++;
+        runTypingEffect();
+      }, 1800);
+    }
+  }, 45);
+}
+runTypingEffect();
+
+// Beep on keypress inside login fields
+[userInput, passInput].forEach(el => {
+  el.addEventListener('keydown', () => soundKeyTick());
+});
+
+let loginAttempts = 0;
+
+function showLoginError(msg) {
+  loginError.textContent = msg;
+  loginError.classList.remove('shake');
+  void loginError.offsetWidth; // reflow
+  loginError.classList.add('shake');
+  soundError();
+}
+
+async function doLogin() {
+  const user = userInput.value.trim().toLowerCase();
+  const pass = passInput.value;
+
+  if (!user || !pass) {
+    showLoginError('[!] FIELDS CANNOT BE EMPTY');
+    return;
+  }
+
+  if (CREDENTIALS[user] !== pass) {
+    loginAttempts++;
+    showLoginError(`[!] AUTHENTICATION FAILED — ATTEMPT ${loginAttempts}/3`);
+    if (loginAttempts >= 3) {
+      authBtn.disabled = true;
+      authBtn.textContent = 'LOCKED';
+      showLoginError('[CRITICAL] TOO MANY FAILED ATTEMPTS. LOCKED.');
+    }
+    return;
+  }
+
+  // SUCCESS
+  loginError.textContent = '';
+  authBtn.disabled = true;
+  authBtn.textContent = 'AUTHENTICATING...';
+  loggedInUser = user;
+
+  const steps = [
+    'VERIFYING IDENTITY...',
+    'DECRYPTING VAULT...',
+    'LOADING USER PROFILE...',
+    'MOUNTING SECURE VOLUMES...',
+    'ESTABLISHING VPN TUNNEL...',
+    'ALL SYSTEMS ONLINE.',
+  ];
+  progressWrap.style.display = 'block';
+
+  for (let i = 0; i < steps.length; i++) {
+    statusText.textContent = steps[i];
+    progressBar.style.transition = 'width 0.4s linear';
+    progressBar.style.width = ((i + 1) / steps.length * 100) + '%';
+    soundCmd();
+    await new Promise(r => setTimeout(r, 420));
+  }
+
+  soundSuccess();
+  await new Promise(r => setTimeout(r, 400));
+
+  // Hide login, show dashboard
+  loginScreen.classList.add('hiding');
+  setTimeout(() => {
+    loginScreen.style.display = 'none';
+    app.classList.add('visible');
+    document.getElementById('welcome-tag').textContent = `OPERATOR: ${user.toUpperCase()}`;
+    document.getElementById('prompt-sym').textContent  = `${user}@cypher:~$`;
+    // Boot terminal
+    bootTerminal(user);
+    // Start dashboard systems
+    startDashboard();
+    // Voice greeting
+    setTimeout(() => speakWelcome(user), 600);
+  }, 650);
+}
+
+authBtn.addEventListener('click', doLogin);
+passInput.addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+
+
+/* ═══════════════════════════════════════════
+   SECTION G — TERMINAL ENGINE
+═══════════════════════════════════════════ */
+const termOutput = document.getElementById('term-output');
+const termInput  = document.getElementById('term-in');
+
+function termLine(type, text) {
+  const div = document.createElement('div');
+  div.className = 'tl';
+  if (type === 'cmd') {
+    div.innerHTML = `<span class="tp" id="dyn-prompt">${loggedInUser}@cypher:~$</span><span class="tc"> ${text}</span>`;
+  } else {
+    div.innerHTML = `<span class="t${type}">${text}</span>`;
+  }
+  termOutput.appendChild(div);
+  termOutput.scrollTop = termOutput.scrollHeight;
+}
+
+function bootTerminal(user) {
+  const seq = [
+    { t:'cmd', v:'system --boot --user ' + user },
+    { t:'o',   v:'Kernel: Linux 6.8.0-cypher-secure #1 SMP x86_64' },
+    { t:'o',   v:'Uptime: 14 days, 7 hours, 22 minutes' },
+    { t:'o',   v:'Loading encrypted modules...' },
+    { t:'s-ok',v:'✔ AES-256-GCM encryption loaded' },
+    { t:'cmd', v:'vpn --connect --server sg-node-07' },
+    { t:'s-ok',v:'✔ Tunnel established [sg-node-07 / 10.8.0.1]' },
+    { t:'s-ok',v:'✔ DNS leak protection: active' },
+    { t:'cmd', v:'firewall --rules check' },
+    { t:'o',   v:'Rules loaded: 1,284 | Blocked today: 3,921' },
+    { t:'w',   v:'[!] 2 suspicious IPs flagged on port 22' },
+    { t:'cmd', v:'threat --monitor --live --silent=false' },
+    { t:'e',   v:'[ALERT] Brute-force attempt from 203.0.113.99 — BLOCKED' },
+    { t:'s-ok',v:'System hardened. Welcome, ' + user + '.' },
+  ];
+  let i = 0;
+  const next = () => {
+    if (i >= seq.length) return;
+    const s = seq[i++];
+    termLine(s.t, s.v);
+    setTimeout(next, 120 + Math.random() * 280);
+  };
+  next();
+}
+
+// Command dictionary
+const CMDS = {
+  help: () => ['Commands: help, whoami, ls, pwd, ps, ifconfig, ping, nmap, status, clear, date, exploit, decrypt'],
+  whoami:   () => [loggedInUser + '  [root privileges]'],
+  pwd:      () => ['/home/' + loggedInUser + '/secure'],
+  ls:       () => ['bin/  etc/  logs/  payloads/  vault/  .shadow  .keys'],
+  date:     () => [new Date().toString()],
+  ifconfig: () => ['eth0   inet 10.8.0.2  netmask 255.255.255.0', 'lo     inet 127.0.0.1  netmask 255.0.0.0'],
+  ping:     () => {
+    const host = '8.8.8.8';
+    return [`PING ${host}: 64 bytes, ttl=55, time=${(10+Math.random()*5).toFixed(1)}ms`,
+            `PING ${host}: 64 bytes, ttl=55, time=${(10+Math.random()*5).toFixed(1)}ms`,
+            '--- 2 packets transmitted, 0% loss'];
+  },
+  ps:       () => ['PID  CMD', '1    systemd', '442  sshd', '891  bash', '1203 cypher-monitor', '1337 threat-engine'],
+  nmap:     () => ['Scanning 192.168.0.0/24...', 'PORT   STATE SERVICE', '22/tcp open  ssh', '443/tcp open https', '8080/tcp filtered'],
+  status:   () => ['CPU: ' + Math.round(30+Math.random()*40) + '%  |  MEM: ' + Math.round(40+Math.random()*30) + '%',
+                   'Firewall: ACTIVE  |  VPN: CONNECTED', 'Threats blocked: ' + (3900+Math.floor(Math.random()*200))],
+  exploit:  () => { soundPing(); return ['[!] Exploit module loaded — target required', 'Usage: exploit <IP> --module <name>'] },
+  decrypt:  () => { soundCmd(); return ['Decryption engine initialized...', '[OK] Cipher: AES-256-GCM  Key: ████████████'] },
+  clear:    () => { termOutput.innerHTML = ''; return []; },
+};
+
+termInput.addEventListener('keydown', e => {
+  soundKeyTick();
+  if (e.key !== 'Enter') return;
+  const val = termInput.value.trim().toLowerCase();
+  termInput.value = '';
+  if (!val) return;
+  termLine('cmd', val);
+  const fn = CMDS[val.split(' ')[0]];
+  if (fn) {
+    soundCmd();
+    fn().forEach(l => termLine('o', l));
+  } else {
+    termLine('e', `bash: ${val}: command not found. Type 'help'.`);
+  }
+});
+
+
+/* ═══════════════════════════════════════════
+   SECTION H — DASHBOARD SYSTEMS
+   (Stats, Globe, Hex, Bars, Threats, Alerts)
+═══════════════════════════════════════════ */
+function startDashboard() {
+  initStats();
+  initNodes();
+  initGlobe();
+  initHex();
+  initBars();
+  initThreats();
+  initAlerts();
+  initGlitch();
+}
+
+// — Stats
+const statCfg = [
+  { bar:'cpu-bar',  val:'cpu-val',  v:35, cls:'sf-green'  },
+  { bar:'mem-bar',  val:'mem-val',  v:58, cls:'sf-cyan'   },
+  { bar:'net-bar',  val:'net-val',  v:22, cls:'sf-amber'  },
+  { bar:'disk-bar', val:'disk-val', v:44, cls:'sf-red'    },
+  { bar:'temp-bar', val:'temp-val', v:62, cls:''          },
+];
+function initStats() {
+  function tick() {
+    statCfg.forEach(s => {
+      s.v = Math.max(4, Math.min(97, s.v + (Math.random() - 0.48) * 11));
+      const p = Math.round(s.v);
+      document.getElementById(s.bar).style.width = p + '%';
+      document.getElementById(s.val).textContent = s.bar.includes('temp') ? p + '°C' : p + '%';
+    });
+  }
+  setInterval(tick, 1300); tick();
+}
+
+// — Active nodes
+const NODES = [
+  {ip:'192.168.0.1',    s:'online'},
+  {ip:'10.0.0.42',      s:'online'},
+  {ip:'172.16.254.3',   s:'pending'},
+  {ip:'192.168.1.100',  s:'online'},
+  {ip:'10.10.10.50',    s:'offline'},
+  {ip:'203.0.113.7',    s:'online'},
+  {ip:'198.51.100.22',  s:'online'},
+];
+function initNodes() {
+  const list = document.getElementById('node-list');
+  NODES.forEach(n => {
+    const el = document.createElement('div');
+    el.className = 'node-item';
+    el.innerHTML = `<span class="ndot ${n.s}"></span>${n.ip}<span style="margin-left:auto;font-size:8px;color:${n.s==='online'?'var(--g)':n.s==='offline'?'var(--red)':'var(--amber)'}">${n.s.toUpperCase()}</span>`;
+    list.appendChild(el);
+  });
+}
+
+// — Globe (Canvas 2D API)
+function initGlobe() {
+  const c = document.getElementById('globe-canvas');
+  const g = c.getContext('2d');
+  const W = c.width, H = c.height, CX = W/2, CY = H/2, R = 62;
+  let t = 0;
+  const pts = Array.from({length:20}, () => ({
+    lat: (Math.random()-.5)*Math.PI,
+    lon: Math.random()*Math.PI*2,
+    hot: Math.random() > .65,
+    ph:  Math.random()*Math.PI*2,
+  }));
+
+  function proj(lat, lon) {
+    const x = Math.cos(lat)*Math.sin(lon+t);
+    const y = Math.sin(lat);
+    const z = Math.cos(lat)*Math.cos(lon+t);
+    return { x: CX + R*x, y: CY - R*y, z, vis: z > -.05 };
+  }
+
+  function frame() {
+    g.clearRect(0,0,W,H);
+    // Globe ring
+    g.beginPath(); g.arc(CX,CY,R,0,Math.PI*2);
+    g.strokeStyle='rgba(0,255,65,0.25)'; g.lineWidth=1; g.stroke();
+    // Lat lines
+    for (let i=-3;i<=3;i++) {
+      const lt=i/3*(Math.PI/2), r2=R*Math.cos(lt), oy=-R*Math.sin(lt);
+      g.beginPath(); g.ellipse(CX,CY+oy,r2,r2*.2,0,0,Math.PI*2);
+      g.strokeStyle='rgba(0,255,65,0.1)'; g.stroke();
+    }
+    // Lon lines
+    for (let i=0;i<6;i++) {
+      const lon=i/6*Math.PI*2;
+      g.beginPath();
+      let first=true;
+      for (let a=0;a<=Math.PI*2;a+=.08) {
+        const p=proj(a-Math.PI,lon);
+        if (p.vis) { first?g.moveTo(p.x,p.y):g.lineTo(p.x,p.y); first=false; }
+        else first=true;
+      }
+      g.strokeStyle='rgba(0,255,65,0.07)'; g.stroke();
+    }
+    // Points + connections
+    const visible=pts.filter(p=>proj(p.lat,p.lon).vis);
+    for (let i=0;i<visible.length;i++) {
+      const a=proj(visible[i].lat,visible[i].lon);
+      for (let j=i+1;j<visible.length;j++) {
+        const b=proj(visible[j].lat,visible[j].lon);
+        const d=Math.hypot(a.x-b.x,a.y-b.y);
+        if (d<50) {
+          g.beginPath(); g.moveTo(a.x,a.y); g.lineTo(b.x,b.y);
+          g.strokeStyle=`rgba(0,255,65,${.18*(1-d/50)})`; g.lineWidth=.5; g.stroke();
+        }
+      }
+    }
+    pts.forEach(p=>{
+      const pr=proj(p.lat,p.lon);
+      if(!pr.vis) return;
+      const al=.3+pr.z*.7;
+      // Pulse ring for hot nodes
+      if(p.hot){
+        const pulse=.5+.5*Math.sin(t*2+p.ph);
+        g.beginPath(); g.arc(pr.x,pr.y,4+pulse*5,0,Math.PI*2);
+        g.strokeStyle=`rgba(0,229,255,${al*.35*pulse})`; g.lineWidth=.7; g.stroke();
+      }
+      g.beginPath(); g.arc(pr.x,pr.y,p.hot?3:2,0,Math.PI*2);
+      g.fillStyle=p.hot?`rgba(0,229,255,${al})`:`rgba(0,255,65,${al})`; g.fill();
+    });
+    t+=.003;
+    requestAnimationFrame(frame);
+  }
+  frame();
+}
+
+// — Hex Map (Canvas 2D API)
+function initHex() {
+  const c = document.getElementById('hex-canvas');
+  const g = c.getContext('2d');
+  const R = 13;
+  let cells=[];
+
+  function build() {
+    c.width=c.offsetWidth; c.height=c.offsetHeight;
+    cells=[];
+    const cols=Math.ceil(c.width/(Math.sqrt(3)*R))+1;
+    const rows=Math.ceil(c.height/(R*1.5))+1;
+    for(let row=0;row<rows;row++)
+      for(let col=0;col<cols;col++)
+        cells.push({
+          x:col*Math.sqrt(3)*R+(row%2)*Math.sqrt(3)*R/2,
+          y:row*R*1.5,
+          t:Math.random()*Math.PI*2,
+          speed:.008+Math.random()*.025,
+          hot: Math.random()>.88,
+        });
+  }
+  build();
+  window.addEventListener('resize',build);
+
+  function hex(x,y,r){
+    g.beginPath();
+    for(let i=0;i<6;i++){
+      const a=Math.PI/3*i-Math.PI/6;
+      i===0?g.moveTo(x+r*Math.cos(a),y+r*Math.sin(a)):g.lineTo(x+r*Math.cos(a),y+r*Math.sin(a));
+    }
+    g.closePath();
+  }
+
+  function frame(){
+    g.clearRect(0,0,c.width,c.height);
+    cells.forEach(cell=>{
+      cell.t+=cell.speed;
+      const v=.2+.4*Math.abs(Math.sin(cell.t));
+      hex(cell.x,cell.y,R-1.5);
+      if(cell.hot){
+        g.fillStyle=`rgba(0,229,255,${v*.15})`;
+        g.strokeStyle=`rgba(0,229,255,${v*.6})`;
+      } else {
+        g.fillStyle=`rgba(0,255,65,${v*.07})`;
+        g.strokeStyle=`rgba(0,255,65,${v*.35})`;
+      }
+      g.lineWidth=.5; g.fill(); g.stroke();
+    });
+    requestAnimationFrame(frame);
+  }
+  frame();
+}
+
+// — Traffic bars
+function initBars() {
+  const wrap=document.getElementById('bar-wrap');
+  const N=36; const bars=[];
+  for(let i=0;i<N;i++){
+    const col=document.createElement('div'); col.className='bar-col';
+    const b=document.createElement('div');   b.className='bar-fill';
+    b.style.height='4px';
+    const l=document.createElement('div');   l.className='bar-lbl';
+    l.textContent=(i%9===0)?String(i).padStart(2,'0'):'';
+    col.appendChild(b); col.appendChild(l); wrap.appendChild(col);
+    bars.push(b);
+  }
+  function tick(){ bars.forEach(b=>{ b.style.height=(6+Math.random()*92)+'%'; }); }
+  setInterval(tick,650); tick();
+}
+
+// — Threat feed
+const THREAT_TPL=[
+  {label:'CRIT',cls:'crit'},{label:'WARN',cls:'warn'},{label:'INFO',cls:'info'}
+];
+function initThreats(){
+  const list=document.getElementById('threat-list');
+  function add(){
+    const t=THREAT_TPL[Math.floor(Math.random()*THREAT_TPL.length)];
+    const ip=()=>Math.floor(Math.random()*254)+1;
+    const src=`${ip()}.${ip()}.${ip()}.${ip()}`;
+    const el=document.createElement('div'); el.className='threat-item';
+    el.innerHTML=`<span class="threat-src">${src}</span><span class="badge ${t.cls}">${t.label}</span>`;
+    list.insertBefore(el,list.firstChild);
+    if(list.children.length>7) list.removeChild(list.lastChild);
+    if(t.cls==='crit') soundPing();
+  }
+  for(let i=0;i<5;i++) add();
+  setInterval(add,2800);
+}
+
+// — Alert log
+const ALERTS=[
+  {m:'Port scan detected on :22',    c:'red'},
+  {m:'SSH brute-force blocked',       c:'red'},
+  {m:'TLS handshake: new peer',       c:''},
+  {m:'Firewall rule #447 triggered',  c:'amber'},
+  {m:'VPN tunnel rekeyed',            c:''},
+  {m:'Packet loss spike: 4.2%',       c:'amber'},
+  {m:'Unauthorized access attempt',   c:'red'},
+  {m:'DNS query anomaly flagged',     c:'amber'},
+  {m:'Backup completed successfully', c:''},
+  {m:'Zero-day signature matched',    c:'red'},
+];
+function initAlerts(){
+  const list=document.getElementById('alert-list');
+  function add(){
+    const a=ALERTS[Math.floor(Math.random()*ALERTS.length)];
+    const n=new Date();
+    const ts=`${String(n.getHours()).padStart(2,'0')}:${String(n.getMinutes()).padStart(2,'0')}:${String(n.getSeconds()).padStart(2,'0')}`;
+    const el=document.createElement('div'); el.className='alert-item';
+    el.innerHTML=`<span class="alert-ts">[${ts}]</span><span class="alert-msg ${a.c}">${a.m}</span>`;
+    list.insertBefore(el,list.firstChild);
+    if(list.children.length>9) list.removeChild(list.lastChild);
+  }
+  for(let i=0;i<5;i++) add();
+  setInterval(add,3500);
+}
+
+// — Logo glitch
+function initGlitch(){
+  const g=document.getElementById('logo-glitch');
+  const trigger=()=>{
+    g.classList.add('active');
+    setTimeout(()=>g.classList.remove('active'),500);
+    setTimeout(trigger,4000+Math.random()*5000);
+  };
+  setTimeout(trigger,3000);
+}
+</script>
+</body>
+</html>
